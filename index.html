@@ -3,72 +3,242 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=0.2, maximum-scale=4,user-scalable=yes">
-<!-- jsQR.jsの読み込み -->
 <script src="jsQR.js"></script>
 <script>
-  var video,tmp,tmp_ctx,qr,prev,prev_ctx,w,h,m,x1,y1;
-  window.addEventListener("load",function(){
-    video=document.createElement('video');
-    video.setAttribute("autoplay","");
-    video.setAttribute("muted","");
-    video.setAttribute("playsinline","");
-    video.onloadedmetadata = function(e){video.play();};
-    prev=document.getElementById("preview");
-    prev_ctx=prev.getContext("2d");
-    tmp = document.createElement('canvas');
-    tmp_ctx = tmp.getContext("2d");
-
-    qr = document.getElementById("qr");
-    //カメラ使用の許可ダイアログが表示される
-    navigator.mediaDevices.getUserMedia(
-      //マイクはオフ, カメラの設定   できれば背面カメラ    できれば640×480
-      {"audio":false,"video":{"facingMode":"environment","width":{"ideal":640},"height":{"ideal":480}}}
-    ).then( //許可された場合
-      function(stream){
-        video.srcObject = stream;
-        //0.5秒後にスキャンする
-        setTimeout(Scan,500);
-      }
-    ).catch( //許可されなかった場合
-      function(err){qr.innerHTML=qr.innerHTML+err+'\n';}
-    );
-  });
-  function Scan(){
-    //選択された幅高さ
-    w=video.videoWidth;
-    h=video.videoHeight;
-    //画面上の表示サイズ
-    prev.style.width=(w/2)+"px";
-    prev.style.height=(h/2)+"px";
-    //内部のサイズ
-    prev.setAttribute("width",w);
-    prev.setAttribute("height",h);
-    if(w>h){m=h*0.5;}else{m=w*0.5;}
-    x1=(w-m)/2;
-    y1=(h-m)/2;
-    prev_ctx.drawImage(video,0,0,w,h);
-    prev_ctx.beginPath();
-    prev_ctx.strokeStyle="rgb(255,0,0)";
-    prev_ctx.lineWidth=2;
-    prev_ctx.rect(x1,y1,m,m);
-    prev_ctx.stroke();
-    tmp.setAttribute("width",m);
-    tmp.setAttribute("height",m);
-    tmp_ctx.drawImage(prev,x1,y1,m,m,0,0,m,m);
-    let imageData = tmp_ctx.getImageData(0,0,m,m);
-    let scanResult = jsQR(imageData.data,m,m);
-    if(scanResult){
-      //QRコードをスキャンした結果を出力
-      qr.value=qr.value+scanResult.data+'\n';
-      qr.scrollTop = qr.scrollHeight;
-    }
-    setTimeout(Scan,200);
+const camera_check = () => {
+  if(! navigator) {
+    console.error(`Non-browser is not supported`)
+    return false
   }
+  if(! navigator.mediaDevices) {
+    const message = `mediaDevices is not supported`
+    document.querySelector(`#guide`).innerHTML = message
+    console.error(message)
+    return false
+  }
+  if(! navigator.mediaDevices.getUserMedia) {
+    const message = `getUserMedia() is not supported`
+    document.querySelector(`#guide`).innerHTML = message
+    console.error(message)
+    return false
+  }
+  return true
+}
+
+const isValidCode = text =>
+  text.match(/^WIFI:.+?;SN:(?<SN>[0-9]+).*?;M:(?<M>[0-9a-fA-F]+).*?(?:;U:(?<U>[a-zA-Z0-9]+).*?;PW:(?<PW>[^;]+))?.*?;B:(?<B>[0-9a-zA-Z]+)/)
+
+const camera_start = () => {
+  if(! camera_check()) return
+
+  const [preview_element, code_element] =
+    ['preview', 'qr'].map(id => document.getElementById(id))
+  const [video_element, canvas_element] =
+    ['video', 'canvas'].map(type => document.createElement(type))
+
+  video_element.setAttribute("autoplay", "")
+  video_element.setAttribute("muted", "")
+  video_element.setAttribute("playsinline", "")
+  video_element.onloadedmetadata = () => video_element.play()
+
+  const preview_context = preview_element.getContext("2d")
+  const canvas_context = canvas_element.getContext("2d", {willReadFrequently: true})
+
+  function scan_qr_code() {
+    // 選択された幅と高さ: 例: 1280 x 960 px
+    const [w, h] = [video_element.videoWidth, video_element.videoHeight];
+    // 画面上の表示サイズ
+    preview_element.style.width = (w / 2) + "px"
+    preview_element.style.height = (h / 2) + "px"
+    // canvas内部のサイズ
+    preview_element.setAttribute("width", w)
+    preview_element.setAttribute("height", h)
+
+    const m = w > h ? h * 0.5 : w * 0.5
+    const [x1, y1] = [(w - m) / 2, (h - m)  /2]
+    preview_context.drawImage(video_element, 0, 0, w, h)
+    preview_context.beginPath()
+    preview_context.strokeStyle = "rgb(255, 0, 0)"
+    preview_context.lineWidth = 2
+    preview_context.rect(x1, y1, m, m)
+    preview_context.stroke()
+
+    canvas_element.setAttribute("width", m)
+    canvas_element.setAttribute("height", m)
+    canvas_context.drawImage(preview_element, x1, y1, m, m, 0, 0, m, m)
+    const imageData = canvas_context.getImageData(0, 0, m, m)
+
+    const scanResult =
+      jsQR(imageData.data, m, m)
+    //{data: 'WIFI:T:WPA;S:RUT240_DE55;P:e5N3Vgw1;SN:6000031094;I:869223046428734;M:001E4260DE53;U:admin;PW:v6WGt2r0;B:116;' } // test data, debug 1, dynamic password
+    //{data: 'WIFI:T:WPA;S:RUT240_DE55;P:e5N3Vgw1;SN:6000031094;I:869223046428734;M:001E4260DE53;B:105;' } // test data, debug 2, fixed password
+
+    if(! scanResult) // QRコードがなかったら再度スキャン
+      return setTimeout(scan_qr_code, 200)
+
+    const codes = isValidCode(scanResult.data)
+    code_element.innerHTML =
+      (codes ?
+        `<h3 id="validRut240">RUT240です</h3>`
+        : `<h3 id="invalidRut240">▼無効なQRコードです</h3>`
+      ) + scanResult.data
+
+    console.debug(`code:`)
+    console.debug(scanResult.data)
+
+    if(! codes) return setTimeout(scan_qr_code, 200)
+
+    let {groups: {SN, M, U, PW, B}} = codes
+    U ||= 'admin'
+    PW ||= 'admin01'
+    const dateTimeString = new Date().toLocaleString()
+    guide.innerHTML = ``
+      code_element.innerHTML = `<h3>書込み対象として追加しました</h3>` + [
+      ["SERIAL", SN],
+      ["BATCH NO", B],
+      ["LAN MAC", M],
+      ["USERNAME", U],
+      ["PASSWORD", PW],
+      ["追加時刻", dateTimeString],
+    ].map(entry => {
+      const [tag_name, value] = entry
+      return `<div><span class="tag_name">${tag_name}:</span> <span class="tag_value">${value}</div>`
+    }).join(``)
+
+    document.querySelector(`#next`).classList.remove(`hide`)
+  }
+
+  //カメラ使用の許可ダイアログが表示される
+  navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      facingMode: "environment",
+      width: {"ideal": 640},
+      height: {"ideal": 480},
+    }
+  }).then(stream => { // カメラの映像を利用する
+    video_element.srcObject = stream
+    setTimeout(scan_qr_code, 500) //0.5秒後にスキャンする
+  }).catch(error => { // 許可されなかった場合など
+    console.error(`Error getUserMedia():`, error)
+    code_element.innerHTML = error + '\n'
+  })
+}
+
+window.addEventListener("load", camera_start)
+window.addEventListener("click", () => location.reload())
 </script>
+
+<style>
+body, #header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+h1 {
+  min-width: 6em;
+}
+h1, h2 {
+  text-align: center;
+  margin: 0.2em;
+}
+
+h1 span, h2 span {
+  display: inline-block;
+}
+
+#preview {
+  margin: 1rem;
+}
+
+#qr {
+  margin: 1rem;
+  width: 20rem;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 130%;
+}
+
+#qr div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.tag_name {
+  font-weight: bold;
+}
+
+.hide {
+  visibility: collapse;
+}
+
+#next {
+  padding: 0.6em 1.4em;
+  border-width: thick;
+  border-radius: 8px;
+  font-size: 120%;
+  font-weight: bold;
+}
+
+@media (orientation: landscape) {
+  body { flex-direction: row; }
+}
+</style>
 </head>
+
 <body>
-  <p>ピントを合わせて、QRコードをカメラ映像の赤枠内にあわせると読み取ります</p>
-  <div><canvas id="preview"></canvas></div>
-  <textarea id="qr" rows="8" cols="40"></textarea>
+  <div id="header">
+    <h1 id=title><span>RUT240</span> <span>QRコード</span><span>読取り</span></h1>
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <style>
+      .a, .c {
+        fill: none;
+        stroke: #231815;
+        stroke-width: 2px;
+      }
+
+      .a {
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .b {
+        fill: #231815;
+      }
+
+      .c {
+        stroke-miterlimit: 10;
+      }
+    </style>
+  </defs>
+  <title>qr_code_symbol</title>
+  <g>
+    <g>
+      <rect class="a" x="9.52" y="9.52" width="12.31" height="12.31"/>
+      <rect class="a" x="9.52" y="26.17" width="12.31" height="12.31"/>
+      <rect class="a" x="26.17" y="9.52" width="12.31" height="12.31" transform="translate(16.65 48) rotate(-90)"/>
+      <rect class="b" x="14.67" y="14.74" width="2" height="2"/>
+      <rect class="c" x="13.71" y="13.77" width="3.93" height="3.93"/>
+      <rect class="b" x="31.33" y="14.74" width="2" height="2"/>
+      <rect class="c" x="30.36" y="13.77" width="3.93" height="3.93"/>
+      <rect class="b" x="14.67" y="31.33" width="2" height="2"/>
+      <rect class="c" x="13.71" y="30.36" width="3.93" height="3.93"/>
+    </g>
+    <g>
+      <rect class="b" x="31.33" y="31.33" width="2" height="2"/>
+      <rect class="c" x="30.36" y="30.36" width="3.93" height="3.93"/>
+      <rect class="a" x="28.37" y="28.37" width="7.91" height="7.91"/>
+    </g>
+  </g>
+</svg>
+    <h2 id=guide><span>QRコードを赤枠内に</span><span>あわせてください</span></h2>
+  </div>
+
+  <canvas id="preview"></canvas>
+  <div id="qr"></div>
+  <button id="next" class="hide">別のRUT240を書込み検査する</button>
+
 </body>
 </html>
