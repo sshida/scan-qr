@@ -18,7 +18,7 @@ buildRequestParamsForTimestream() {
       }
     ],
     "MeasureName": "password",
-    "MeasureValue": "string",
+    "MeasureValue": "$password",
     "MeasureValueType": "VARCHAR",
     "Time": "$datetimeString",
     "TimeUnit": "SECONDS"
