@@ -47,6 +47,8 @@ const camera_start = () => {
   function scan_qr_code() {
     // 選択された幅と高さ: 例: 1280 x 960 px
     const [w, h] = [video_element.videoWidth, video_element.videoHeight];
+    if(! w || ! h) return setTimeout(scan_qr_code, 200)
+
     // 画面上の表示サイズ
     preview_element.style.width = (w / 2) + "px"
     preview_element.style.height = (h / 2) + "px"
@@ -65,6 +67,8 @@ const camera_start = () => {
 
     canvas_element.setAttribute("width", m)
     canvas_element.setAttribute("height", m)
+    // macBookPro内蔵カメラだと動かない。Android スマホPixel 5a, 3aXLは動いた
+    // Uncaught DOMException: Failed to execute 'drawImage' on 'CanvasRenderingContext2D': The image argument is a canvas element with a width or height of 0.
     canvas_context.drawImage(preview_element, x1, y1, m, m, 0, 0, m, m)
     const imageData = canvas_context.getImageData(0, 0, m, m)
 
@@ -91,7 +95,8 @@ const camera_start = () => {
     let {groups: {SN, M, U, PW, B}} = codes
     U ||= 'admin'
     PW ||= 'admin01'
-    const dateTimeString = new Date().toLocaleString()
+    const dateString = new Date().toLocaleDateString()
+    const timeString = new Date().toLocaleTimeString()
     guide.innerHTML = ``
       code_element.innerHTML = `<h3>書込み対象として追加しました</h3>` + [
       ["SERIAL", SN],
@@ -99,13 +104,15 @@ const camera_start = () => {
       ["LAN MAC", M],
       ["USERNAME", U],
       ["PASSWORD", PW],
-      ["追加時刻", dateTimeString],
+      ["追加日", dateString],
+      ["追加時刻", timeString],
     ].map(entry => {
       const [tag_name, value] = entry
       return `<div><span class="tag_name">${tag_name}:</span> <span class="tag_value">${value}</div>`
     }).join(``)
 
     document.querySelector(`#next`).classList.remove(`hide`)
+    document.querySelector(`#next`).addEventListener("click", () => location.reload())
   }
 
   //カメラ使用の許可ダイアログが表示される
@@ -126,7 +133,6 @@ const camera_start = () => {
 }
 
 window.addEventListener("load", camera_start)
-window.addEventListener("click", () => location.reload())
 </script>
 
 <style>
@@ -144,7 +150,7 @@ h1, h2 {
   margin: 0.2em;
 }
 
-h1 span, h2 span {
+h1 span, h2 span, #next span {
   display: inline-block;
 }
 
@@ -163,6 +169,7 @@ h1 span, h2 span {
 #qr div {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
 }
 
 .tag_name {
@@ -238,7 +245,7 @@ h1 span, h2 span {
 
   <canvas id="preview"></canvas>
   <div id="qr"></div>
-  <button id="next" class="hide">別のRUT240を書込み検査する</button>
+  <button id="next" class="hide"><span>別のRUT240を</span><span>書込み検査する</span></button>
 
 </body>
 </html>
